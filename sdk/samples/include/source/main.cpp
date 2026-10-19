@@ -15,6 +15,7 @@
 	#include <windows.h> // timeGetTime()
 #endif
 #include <set>
+#include <sstream>
 #include <angelscript.h>
 
 #include "../../../add_on/scriptstdstring/scriptstdstring.h"
@@ -59,7 +60,9 @@ int getch()
 #endif
 
 // Function prototypes
+int  SetupApplication();
 int  RunApplication();
+int  CleanUpApplication();
 void ConfigureEngine(asIScriptEngine *engine);
 int  CompileScript(asIScriptEngine *engine);
 void PrintString(string &str);
@@ -67,13 +70,40 @@ void PrintString_Generic(asIScriptGeneric *gen);
 void timeGetTime_Generic(asIScriptGeneric *gen);
 void LineCallback(asIScriptContext *ctx, DWORD *timeOut);
 
+// var
+asIScriptEngine *engine = nullptr;
+asIScriptContext *ctx = nullptr;
+asIScriptModule* modl = nullptr;
+DWORD timeOut;
+int thisScript = 1;
+
 int main(int argc, char **argv)
 {
-	RunApplication();
+	int r = SetupApplication();
+	if (r < 0)
+	{
+		cout << "Error setting up application." << endl;
+		return r;
+	}
 
-	// Wait until the user presses a key
-	cout << endl << "Press any key to quit." << endl;
-	while(!getch());
+	char ch = 'r';
+	while (ch == 'r')
+	{
+		cout << "========== Setting thisScript=" << thisScript << " ==========" << endl;
+		r = RunApplication();
+		if (r < 0)
+		{
+			cout << "Error running application." << endl;
+			return r;
+		}
+
+		// Wait until the user presses a key
+		cout << endl << "Press 'r' to repeat or any other key to quit." << endl;
+		ch = getch();
+		thisScript++;
+	}
+
+	CleanUpApplication();
 
 	return 0;
 }
@@ -90,12 +120,12 @@ void MessageCallback(const asSMessageInfo *msg, void *param)
 }
 
 
-int RunApplication()
+int SetupApplication()
 {
 	int r;
 
 	// Create the script engine
-	asIScriptEngine *engine = asCreateScriptEngine();
+	engine = asCreateScriptEngine();
 	if( engine == 0 )
 	{
 		cout << "Failed to create script engine." << endl;
@@ -109,16 +139,10 @@ int RunApplication()
 	// and variables that the script should be able to use.
 	ConfigureEngine(engine);
 	
-	// Compile the script code
-	r = CompileScript(engine);
-	if( r < 0 )
-	{
-		engine->Release();
-		return -1;
-	}
+
 
 	// Create a context that will execute the script.
-	asIScriptContext *ctx = engine->CreateContext();
+	ctx = engine->CreateContext();
 	if( ctx == 0 ) 
 	{
 		cout << "Failed to create the context." << endl;
@@ -131,7 +155,6 @@ int RunApplication()
 	// that will abort the script after a certain time. Before executing the 
 	// script the timeOut variable will be set to the time when the script must 
 	// stop executing. 
-	DWORD timeOut;
 	r = ctx->SetLineCallback(asFUNCTION(LineCallback), &timeOut, asCALL_CDECL);
 	if( r < 0 )
 	{
@@ -140,9 +163,23 @@ int RunApplication()
 		engine->Release();
 		return -1;
 	}
+}
+
+int RunApplication()
+{
+
+	int r;
+	// Compile the script code
+	r = CompileScript(engine);
+	if( r < 0 )
+	{
+		cout << "Failed to compile the script." << endl;
+		engine->Release();
+		return -1;
+	}
 
 	// Find the function for the function we want to execute.
-	asIScriptFunction *func = engine->GetModule(0)->GetFunctionByDecl("void main()");
+	asIScriptFunction *func = modl->GetFunctionByDecl("void main()");
 	if( func == 0 )
 	{
 		cout << "The function 'void main()' was not found." << endl;
@@ -201,6 +238,15 @@ int RunApplication()
 		cout << "The script finished successfully." << endl;
 	}
 
+	engine->DiscardModule(modl->GetName());
+	modl = nullptr;
+
+	return 0;
+}
+
+int  CleanUpApplication()
+{
+
 	// We must release the contexts when no longer using them
 	ctx->Release();
 
@@ -257,12 +303,22 @@ int CompileScript(asIScriptEngine *engine)
 	// be written to the message stream that we set right after creating the 
 	// script engine. If there are no errors, and no warnings, nothing will
 	// be written to the stream.
-	r = builder.StartNewModule(engine, 0);
+	r = builder.StartNewModule(engine, (string("Module_") + to_string(thisScript)).c_str());
 	if( r < 0 )
 	{
 		cout << "Failed to start new module" << endl;
 		return r;
 	}
+
+	modl = builder.GetModule();
+
+	r = modl->AddScriptSection("abcd", (string("const int thisScript = ") + to_string(thisScript) + ";").c_str());
+	if( r < 0 )
+	{
+		cout << "Failed to add global var `thisScript`" << endl;
+		return r;
+	}
+
 	r = builder.AddSectionFromFile("script.as");
 	if( r < 0 )
 	{

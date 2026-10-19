@@ -6,5 +6,13 @@
 
 void includedFunction()
 {
-    print("I'm now in includedFunction()\n");
+    print("I'm now in includedFunction(), thisScript="+thisScript+"\n");
+}
+
+shared class IncludedSharedClass
+{
+    IncludedSharedClass()
+    {
+        print("I'm now in IncludedSharedClass ctor(), thisScript="+thisScript+"\n");
+    }
 }
